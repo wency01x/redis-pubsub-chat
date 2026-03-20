@@ -15,7 +15,8 @@ def get_redis_connection():
             host=host,
             port=port,
             password=password,
-            decode_responses=True
+            decode_responses=True,
+            ssl=True
         )
 
         if client.ping():
