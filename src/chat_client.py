@@ -15,6 +15,17 @@ def main():
     username = input("Enter your username: ").strip()
     channel = input("Enter channel to join (e.g., general): ").strip()
     
+    # password check
+    lockbox_key = "channel_passwords"
+    expected_password = client.hget(lockbox_key, "general")
+
+    if expected_password:
+        attempt = input (f"'{channel}'is locked. Enter password: ")
+        if attempt != expected_password:
+            print("Incorrect password. Access Denied.")
+            sys.exit(1)
+        print("Password accepted. Joining channel...")
+
     if not username or not channel:
         print("Username and channel are required.")
         sys.exit(1)
@@ -37,8 +48,7 @@ def main():
     # Give the thread a tiny fraction of a second to print its "Joined" message
     time.sleep(0.1)
 
-    print("[Type your message and press Enter. Type '/quit' to exit.]")
-    print("[Type '/online' to see who is here.]")
+    print("\n[Commands: /online, /quit, /lock <pass>, /unlock]")
     
     # The Publisher Loop: This keeps the terminal open forever so you can type
     try:
@@ -53,8 +63,18 @@ def main():
                     # smembers grabs all the names we format into a clear string
                 online_users = client.smembers(users_key)
                 users_list = ", ".join(online_users) 
-
                 print(f"\n[SERVER] Users currently in {channel}: {users_list}\n")
+
+            elif message.lower().startswith('/lock '):
+                # splits "/lock my password" into two parts
+                parts = message.split(' ', 1)
+                new_password = parts[1]
+                client.hset(lockbox_key, channel, new_password)
+                print(f"\n[SERVER] You locked '{channel}' users will need a password.\n")
+            
+            elif message.lower() == '/unlock':
+                client.hdel(lockbox_key, channel)
+                print(f"\n[SERVER] You unlocked '{channel}'. Anyone can join now.\n")
 
             elif message:
                 formatted_message = f"{username}: {message}"
