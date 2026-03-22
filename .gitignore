@@ -1,2 +1,6 @@
 .env
 venv/
+
+user_profile.txt
+
+__pycache__/
