@@ -1,92 +1,65 @@
-import sys
-import threading
-import time
-from config import get_redis_connection
-from display_worker import listen_for_messages
+import asyncio
+import websockets
+import os
 
-def main():
-    print("Welcome to Redis-PubSub-Chat")
-    
-    client = get_redis_connection()
-    if not client:
-        print("Could not connect to Redis. Please check your .env file or server status.")
-        sys.exit(1)
+SERVER_URL = "ws://localhost:8000/chat"
+PROFILE_FILE = "user_profile.txt" # The file where we save the username
 
-    username = input("Enter your username: ").strip()
-    channel = input("Enter channel to join (e.g., general): ").strip()
-    
-    # password check
-    lockbox_key = "channel_passwords"
-    expected_password = client.hget(lockbox_key, "general")
+def get_or_create_user():
+    """Checks if the computer already remembers a username."""
+    if os.path.exists(PROFILE_FILE):
+        # Read the saved name
+        with open(PROFILE_FILE, "r") as file:
+            saved_name = file.read().strip()
+            print(f"👋 Welcome back, {saved_name}!")
+            return saved_name
+    else:
+        # First time running the app on this computer
+        print("=== Account Setup ===")
+        new_name = input("Enter a new username to register: ").strip()
+        
+        # Save it to the file for next time
+        with open(PROFILE_FILE, "w") as file:
+            file.write(new_name)
+            
+        print(f"✅ Saved! This computer will now remember you as '{new_name}'.")
+        return new_name
 
-    if expected_password:
-        attempt = input (f"'{channel}'is locked. Enter password: ")
-        if attempt != expected_password:
-            print("Incorrect password. Access Denied.")
-            sys.exit(1)
-        print("Password accepted. Joining channel...")
-
-    if not username or not channel:
-        print("Username and channel are required.")
-        sys.exit(1)
-
-    # add user to the redis set for the channel
-    users_key = f"channel:{channel}:users"
-    client.sadd(users_key, username)
-
-    # announce arrival to everyone else
-    client.publish(channel, f"[SERVER] {username} has joined the chat!")
-
-    # Start the background listener thread to receive messages
-    listener_thread = threading.Thread(
-        target=listen_for_messages, 
-        args=(client, channel, username),
-        daemon=True 
-    )
-    listener_thread.start()
-
-    # Give the thread a tiny fraction of a second to print its "Joined" message
-    time.sleep(0.1)
-
-    print("\n[Commands: /online, /quit, /lock <pass>, /unlock]")
-    
-    # The Publisher Loop: This keeps the terminal open forever so you can type
+async def listen_to_server(websocket):
+    """Listens for messages and prints them cleanly without messy arrows."""
     try:
         while True:
-            message = input(f"{username} > ")
+            message = await websocket.recv()
+            print(f"{message}") # Just a clean, standard print
+    except:
+        pass 
+
+async def chat():
+    # 1. Get the user from memory (or ask if they are new)
+    username = get_or_create_user()
+
+    try:
+        async with websockets.connect(SERVER_URL) as server:
+            print("\n✅ Connected to chat. You can start typing below!")
+            print("-" * 40) # A clean dividing line
+
+            # 2. Turn on the background listener
+            listener_task = asyncio.create_task(listen_to_server(server))
+
+            # 3. Let the user type (Cleanly, with no weird arrows)
+            while True:
+                message = await asyncio.to_thread(input, f"{username}> ")
                 
-            if message.lower() == '/quit':
-                print("Exiting chat...")
-                break
-                
-            elif message.lower() == '/online':
-                    # smembers grabs all the names we format into a clear string
-                online_users = client.smembers(users_key)
-                users_list = ", ".join(online_users) 
-                print(f"\n[SERVER] Users currently in {channel}: {users_list}\n")
+                if message.lower() == "/exit":
+                    print("Exiting chat. Goodbye!")
+                    listener_task.cancel()
+                    break
 
-            elif message.lower().startswith('/lock '):
-                # splits "/lock my password" into two parts
-                parts = message.split(' ', 1)
-                new_password = parts[1]
-                client.hset(lockbox_key, channel, new_password)
-                print(f"\n[SERVER] You locked '{channel}' users will need a password.\n")
-            
-            elif message.lower() == '/unlock':
-                client.hdel(lockbox_key, channel)
-                print(f"\n[SERVER] You unlocked '{channel}'. Anyone can join now.\n")
+                if message:
+                    await server.send(f"{username}: {message}")
 
-            elif message:
-                formatted_message = f"{username}: {message}"
-                client.publish(channel, formatted_message)
-                    
-    except KeyboardInterrupt:
-        print("\nExiting chat...")
-
-    finally:
-    # clean up: remove user from the channel set and announce departure
-        client.srem(users_key, username)
-        client.publish(channel, f"[SERVER] {username} has left the chat.")
+    except ConnectionRefusedError:
+        print("❌ Could not connect to the server. Is uvicorn running?")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(chat())
