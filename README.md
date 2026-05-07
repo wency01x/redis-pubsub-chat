@@ -1,6 +1,6 @@
 # Redis-PubSub-Chat
 
-A real-time, terminal-based chat application built with Python. This project demonstrates distributed system design principles by utilizing **Redis** as a centralized message broker and implementing the **Publisher/Subscriber (Pub/Sub)** messaging paradigm.
+A real-time, terminal-based chat application built with Python. This project demonstrates distributed system design principles by utilizing **Redis** as a centralized message broker and implementing the **Publisher/Subscriber (Pub/Sub)** messaging paradigm
 
 ## System Architecture & Design
 
